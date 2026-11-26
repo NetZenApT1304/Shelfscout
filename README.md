@@ -11,6 +11,9 @@ jar compare fairly.
 
 - **Search** across all stores at once (try "pasta", "gluten-free bread", "organic eggs").
 - **Dietary filters** that combine: Gluten-free + Vegan shows only items that are both.
+- **Allergen filter ("Avoid")** for the 9 major US allergens: peanuts, tree nuts,
+  milk, eggs, soy, wheat/gluten, fish, shellfish and sesame. Optionally also hides
+  products that "may contain" them. Each product lists its allergens.
 - **Store filter** with distance, plus a max-price limit.
 - **Unit-price sorting** with a *Best value* tag, plus *Lowest price* and *Sale* tags.
 - **Shopping list with basket comparison.** Shows what your whole list costs at
@@ -85,6 +88,21 @@ open food database. No account or key is needed.
 - The data is under the Open Database License. Each product links to its
   Open Food Facts page as attribution.
 
+### Allergens
+
+The same lookup supplies allergens: what a product **contains** and what it
+**may contain** (traces). The Avoid filter uses both, unless "Also hide 'may
+contain'" is unchecked.
+
+- Products with **unknown** allergen info (not in Open Food Facts, or no
+  ingredient data) are hidden whenever an allergen is avoided, and the app says
+  how many were hidden.
+- Wheat/gluten uses Open Food Facts' gluten allergen, which also covers barley and rye.
+- Shopping-list items remember the allergens being avoided when they were added,
+  so basket totals only count safe products.
+- Allergen data can be incomplete or out of date. The app tells shoppers to
+  check the package.
+
 How a Kroger code becomes a barcode: Kroger's 13-digit product codes leave off
 the barcode's final check digit (`0001111041700`). `server.js` adds it back
 (`0011110417008`) before the lookup.
@@ -122,5 +140,5 @@ Other data sources to look at:
 
 1. Let shoppers pick which nearby stores to include.
 2. Add a second real chain.
-3. Allergen filters (peanuts, soy, eggs) using the same Open Food Facts data.
-4. Price-drop alerts and saved dietary profiles.
+3. Saved shopper profiles (needs and allergens remembered between visits).
+4. Price-drop alerts.

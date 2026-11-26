@@ -130,5 +130,32 @@
     tags: r[8] ? r[8].split(" ") : [],
   }));
 
+  // Allergens for the sample products (made up, like the rest of this file).
+  // Keys: peanuts treenuts milk eggs soy gluten fish shellfish sesame
+  const byCategory = {
+    milk: "milk", bread: "gluten soy", pasta: "gluten", pb: "peanuts", eggs: "eggs",
+    cereal: "gluten", bananas: "", chicken: "", yogurt: "milk", coffee: "", rice: "", spinach: "",
+  };
+  const byName = [
+    [/almond/i, "treenuts", ""],
+    [/oat milk/i, "", "gluten"],
+    [/gluten-free (multigrain|white) bread/i, "eggs", "sesame"],
+    [/gluten-free sandwich bread/i, "eggs soy", ""],
+    [/chickpea|lentil|brown rice|corn & rice/i, "", ""],
+    [/honey oat/i, "gluten milk", ""],
+    [/toasted oat/i, "gluten", "soy"],
+    [/crispy rice/i, "", "peanuts treenuts"],
+    [/granola/i, "treenuts", "peanuts"],
+    [/coconut yogurt/i, "", "treenuts"],
+    [/peanut butter/i, "peanuts", "treenuts"],
+  ];
+  offers.forEach((o) => {
+    const rule = byName.find(([re]) => re.test(o.name));
+    const contains = rule ? rule[1] : byCategory[o.cat];
+    const may = rule ? rule[2] : "";
+    o.contains = contains ? contains.split(" ") : [];
+    o.mayContain = may ? may.split(" ") : [];
+  });
+
   window.SHELF_DATA = { stores, categories, offers };
 })();

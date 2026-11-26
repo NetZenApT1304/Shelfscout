@@ -202,9 +202,31 @@ function dietFromOff(p) {
   else if (knowsIngredients) add("df", "ingredients");
 
   if (has(labels, /non-gmo|no-gmos/)) add("ngmo", "label");
+
+  // Allergens, using the 9 major US allergens.
+  out.allergensKnown = knowsIngredients || allergens.length > 0;
+  out.contains = mapAllergens(allergens);
+  out.mayContain = mapAllergens(traces).filter((a) => !out.contains.includes(a));
   return out;
 }
 
+const ALLERGEN_MAP = {
+  "en:peanuts": "peanuts",
+  "en:nuts": "treenuts",
+  "en:milk": "milk",
+  "en:eggs": "eggs",
+  "en:soybeans": "soy",
+  "en:gluten": "gluten",
+  "en:fish": "fish",
+  "en:crustaceans": "shellfish",
+  "en:molluscs": "shellfish",
+  "en:sesame-seeds": "sesame",
+};
+function mapAllergens(tags) {
+  return [...new Set(tags.map((t) => ALLERGEN_MAP[t]).filter(Boolean))];
+}
+
+const CACHE_VERSION = 2; // bump when dietFromOff changes so old entries are redone
 const offCache = loadOffCache();
 function loadOffCache() {
   try {
@@ -242,7 +264,7 @@ const MISSING_TTL = 24 * 3600_000;
 
 async function lookupDiet(barcode) {
   const hit = offCache.get(barcode);
-  if (hit && Date.now() - hit.at < (hit.found ? FOUND_TTL : MISSING_TTL)) return hit;
+  if (hit && hit.v === CACHE_VERSION && Date.now() - hit.at < (hit.found ? FOUND_TTL : MISSING_TTL)) return hit;
   await offRateLimit();
   const fields = "code,product_name,labels_tags,allergens_tags,traces_tags,ingredients_analysis_tags,ingredients_n";
   const res = await fetch(`${OFF_BASE}/api/v2/product/${barcode}.json?fields=${fields}`, {
@@ -256,7 +278,7 @@ async function lookupDiet(barcode) {
 }
 
 function remember(barcode, result) {
-  const entry = { ...result, at: Date.now() };
+  const entry = { ...result, at: Date.now(), v: CACHE_VERSION };
   offCache.set(barcode, entry);
   saveOffCache();
   return entry;
@@ -275,7 +297,7 @@ async function lookupDietMany(krogerCodes) {
         continue;
       }
       try {
-        const { at, ...r } = await lookupDiet(barcode);
+        const { at, v, ...r } = await lookupDiet(barcode);
         results[kc] = r;
       } catch (e) {
         results[kc] = { found: false, error: true };

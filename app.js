@@ -11,6 +11,17 @@
     df: "Dairy-free",
     ngmo: "Non-GMO",
   };
+  const ALLERGENS = {
+    peanuts: "Peanuts",
+    treenuts: "Tree nuts",
+    milk: "Milk",
+    eggs: "Eggs",
+    soy: "Soy",
+    gluten: "Wheat/gluten",
+    fish: "Fish",
+    shellfish: "Shellfish",
+    sesame: "Sesame",
+  };
   const UNIT_LABEL = { oz: "oz", floz: "fl oz", lb: "lb", ct: "each", item: "item" };
   const SUGGESTIONS = ["pasta", "milk", "bread", "eggs", "peanut butter", "cereal", "coffee", "chicken"];
   const STORAGE_KEY = "shelf-scout-list-v1";
@@ -56,7 +67,7 @@
           );
           const body = await res.json();
           if (!res.ok) throw new Error(body.error || "Kroger search failed.");
-          return body.offers.map((o) => ({ ...o, store: "kr-" + loc.locationId, cat, live: true }));
+          return body.offers.map((o) => ({ ...o, store: "kr-" + loc.locationId, cat, live: true, contains: null }));
         })
       );
       const offers = perStore.flat();
@@ -102,6 +113,10 @@
     tags.forEach((t) => (sources[t] = d.sources[t] || o.sources[t] || "name"));
     o.tags = [...tags];
     o.sources = sources;
+    if (d.allergensKnown) {
+      o.contains = d.contains || [];
+      o.mayContain = d.mayContain || [];
+    }
   }
 
   const providers = [sampleProvider, krogerProvider];
@@ -152,6 +167,8 @@
   const state = {
     query: "pasta",
     diet: new Set(),
+    avoid: new Set(), // allergens to avoid
+    strictTraces: true, // also hide "may contain"
     stores: new Set(storeList.map((s) => s.id)),
     sort: "unit",
     maxPrice: "",
@@ -205,7 +222,24 @@
   }
 
   function itemKey(item) {
-    return item.cat + "|" + item.need.slice().sort().join(",");
+    const avoid = (item.avoid || []).slice().sort().join(",");
+    return [item.cat, item.need.slice().sort().join(","), avoid, avoid && item.strict ? "strict" : ""].join("|");
+  }
+
+  // Is this product safe for someone avoiding these allergens?
+  // Products with unknown allergen info never count as safe.
+  function safeFor(o, avoid, strict) {
+    if (!avoid.length) return true;
+    if (!o.contains) return false;
+    return avoid.every((a) => !o.contains.includes(a) && !(strict && (o.mayContain || []).includes(a)));
+  }
+
+  function fitsItem(o, item) {
+    return (
+      o.cat === item.cat &&
+      item.need.every((t) => o.tags.includes(t)) &&
+      safeFor(o, item.avoid || [], item.strict)
+    );
   }
 
   function itemLabel(item) {
@@ -216,12 +250,15 @@
 
   // ---- Filtering ------------------------------------------------------------
   function applyFilters(offers) {
+    return offers.filter((o) => passesBasic(o) && safeFor(o, [...state.avoid], state.strictTraces));
+  }
+
+  function passesBasic(o) {
     const max = parseFloat(state.maxPrice);
-    return offers.filter(
-      (o) =>
-        state.stores.has(o.store) &&
-        [...state.diet].every((t) => o.tags.includes(t)) &&
-        (isNaN(max) || o.price <= max)
+    return (
+      state.stores.has(o.store) &&
+      [...state.diet].every((t) => o.tags.includes(t)) &&
+      (isNaN(max) || o.price <= max)
     );
   }
 
@@ -242,6 +279,16 @@
           `<button type="button" class="chip" data-diet="${k}" aria-pressed="${state.diet.has(k)}">${label}</button>`
       )
       .join("");
+    $("#avoid-chips").innerHTML = Object.entries(ALLERGENS)
+      .map(
+        ([k, label]) =>
+          `<button type="button" class="chip chip-avoid" data-avoid="${k}" aria-pressed="${state.avoid.has(
+            k
+          )}">${label}</button>`
+      )
+      .join("");
+    $("#strict").checked = state.strictTraces;
+    $("#strict-wrap").hidden = !state.avoid.size;
     $("#store-chips").innerHTML = storeList
       .map(
         (s) =>
@@ -269,9 +316,17 @@
       return;
     }
 
+    const unknownHidden = state.avoid.size
+      ? state.results.filter((o) => passesBasic(o) && !o.contains).length
+      : 0;
     const notice =
       (live.error ? `<p class="notice">Live prices: ${esc(live.error)}</p>` : "") +
-      (live.dietPending ? `<p class="checking">Checking dietary labels on Open Food Facts…</p>` : "");
+      (live.dietPending ? `<p class="checking">Checking dietary labels on Open Food Facts…</p>` : "") +
+      (unknownHidden && !live.dietPending
+        ? `<p class="hidden-note">${unknownHidden} ${
+            unknownHidden === 1 ? "product is" : "products are"
+          } hidden because ${unknownHidden === 1 ? "its" : "their"} allergen info is unknown.</p>`
+        : "");
 
     if (!state.results.length) {
       summary.innerHTML = notice;
@@ -286,7 +341,7 @@
     }
 
     if (!filtered.length) {
-      summary.innerHTML = "";
+      summary.innerHTML = notice;
       listEl.innerHTML = `<div class="empty"><p>${state.results.length} results for “${esc(
         state.query
       )}”, but none match your filters.</p><button type="button" class="btn" data-action="clear-filters">Clear filters</button></div>`;
@@ -304,7 +359,9 @@
 
     summary.innerHTML = notice + `<p><strong>${filtered.length}</strong> options at <strong>${storeCount}</strong> ${
       storeCount === 1 ? "store" : "stores"
-    }${state.diet.size ? " · " + [...state.diet].map((t) => TAGS[t].toLowerCase()).join(", ") : ""}</p>
+    }${state.diet.size ? " · " + [...state.diet].map((t) => TAGS[t].toLowerCase()).join(", ") : ""}${
+      state.avoid.size ? " · no " + [...state.avoid].map((a) => ALLERGENS[a].toLowerCase()).join(", no ") : ""
+    }</p>
       <p class="muted">Best value: <strong>${esc(best.name)}</strong> at ${esc(storeById[best.store].name)}, ${fmtUnit(
       best
     )}</p>`;
@@ -314,7 +371,7 @@
       .map((o) => {
         const isBest = bestByUnit[o.unit] === o;
         const isLowest = lowest === o && !isBest;
-        const key = itemKey({ cat: o.cat, need: needFor(o) });
+        const key = itemKey(itemFor(o));
         const added = inList.has(key);
         return `<li class="offer${isBest ? " is-best" : ""}">
           <div class="offer-info">
@@ -334,6 +391,7 @@
                 ? `<ul class="tags">${o.tags.map((t) => tagPill(o, t)).join("")}</ul>`
                 : ""
             }
+            ${allergenLine(o)}
             ${
               o.offCode
                 ? `<p class="source">Diet info: <a href="https://world.openfoodfacts.org/product/${esc(
@@ -367,16 +425,29 @@
     return `<li class="src-${src}" title="${SOURCE_NOTE[src]}">${TAGS[t]}${src === "ingredients" ? "*" : ""}</li>`;
   }
 
-  // The list item remembers the dietary needs that are active when you add it,
-  // limited to tags the chosen product actually has.
-  function needFor(offer) {
-    return [...state.diet].filter((t) => offer.tags.includes(t));
+  function allergenLine(o) {
+    if (!o.contains) return o.live ? `<p class="allergens muted">Allergens: unknown</p>` : "";
+    const parts = [];
+    if (o.contains.length) parts.push("Contains " + o.contains.map((a) => ALLERGENS[a].toLowerCase()).join(", "));
+    if (o.mayContain && o.mayContain.length)
+      parts.push("May contain " + o.mayContain.map((a) => ALLERGENS[a].toLowerCase()).join(", "));
+    if (!parts.length) parts.push("No major allergens listed");
+    return `<p class="allergens">${parts.join(" · ")}</p>`;
+  }
+
+  // The list item remembers the needs and allergens that are active when you
+  // add it (needs limited to tags the chosen product actually has).
+  function itemFor(offer) {
+    return {
+      cat: offer.cat,
+      need: [...state.diet].filter((t) => offer.tags.includes(t)),
+      avoid: [...state.avoid],
+      strict: state.strictTraces,
+    };
   }
 
   function cheapestAt(item, storeId) {
-    const options = [...pool.values()].filter(
-      (o) => o.cat === item.cat && (!storeId || o.store === storeId) && item.need.every((t) => o.tags.includes(t))
-    );
+    const options = [...pool.values()].filter((o) => (!storeId || o.store === storeId) && fitsItem(o, item));
     return options.sort((a, b) => a.price - b.price)[0] || null;
   }
 
@@ -394,6 +465,8 @@
         (item, i) => `<li>
           <span>${esc(itemLabel(item))}${item.need
           .map((t) => ` <span class="need">${TAGS[t]}</span>`)
+          .join("")}${(item.avoid || [])
+          .map((a) => ` <span class="need need-avoid">No ${ALLERGENS[a].toLowerCase()}</span>`)
           .join("")}</span>
           <button type="button" class="remove" data-remove="${i}" aria-label="Remove ${esc(itemLabel(item))}">×</button>
         </li>`
@@ -421,7 +494,7 @@
     // Cheapest split: each item from whichever store has it cheapest.
     const splitPicks = state.list.map((item) =>
       [...pool.values()]
-        .filter((o) => state.stores.has(o.store) && o.cat === item.cat && item.need.every((t) => o.tags.includes(t)))
+        .filter((o) => state.stores.has(o.store) && fitsItem(o, item))
         .sort((a, b) => a.price - b.price)[0] || null
     );
     const splitTotal = splitPicks.reduce((sum, o) => sum + (o ? o.price : 0), 0);
@@ -508,6 +581,11 @@
       renderResults();
     });
 
+    $("#strict").addEventListener("change", (e) => {
+      state.strictTraces = e.target.checked;
+      renderResults();
+    });
+
     $("#max-price").addEventListener("input", (e) => {
       state.maxPrice = e.target.value;
       renderResults();
@@ -519,6 +597,11 @@
       if (b.dataset.diet) {
         const k = b.dataset.diet;
         state.diet.has(k) ? state.diet.delete(k) : state.diet.add(k);
+        renderControls();
+        renderResults();
+      } else if (b.dataset.avoid) {
+        const k = b.dataset.avoid;
+        state.avoid.has(k) ? state.avoid.delete(k) : state.avoid.add(k);
         renderControls();
         renderResults();
       } else if (b.dataset.store) {
@@ -533,7 +616,7 @@
         runSearch();
       } else if (b.dataset.add) {
         const o = pool.get(b.dataset.add);
-        const item = { cat: o.cat, need: needFor(o) };
+        const item = itemFor(o);
         if (!state.list.some((x) => itemKey(x) === itemKey(item))) {
           state.list.push(item);
           saveList();
@@ -552,6 +635,7 @@
         renderResults();
       } else if (b.dataset.action === "clear-filters") {
         state.diet.clear();
+        state.avoid.clear();
         state.stores = new Set(storeList.map((s) => s.id));
         state.maxPrice = $("#max-price").value = "";
         renderControls();

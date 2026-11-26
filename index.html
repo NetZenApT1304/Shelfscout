@@ -95,6 +95,13 @@
   }
   .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
   .chip .mi { opacity: 0.7; font-size: 0.78rem; }
+  .chip-avoid[aria-pressed="true"] { background: var(--sale); border-color: var(--sale); color: var(--surface); }
+  .chip-avoid[aria-pressed="true"]::before { content: "No "; }
+  .controls label.check { color: var(--ink); }
+  .controls label.check input { width: 18px; height: 18px; min-height: 0; accent-color: var(--sale); }
+  .allergens { margin: 2px 0 0; font-size: 0.8rem; }
+  .hidden-note { margin: 0 0 10px !important; font-size: 0.86rem; color: var(--muted); }
+  .need-avoid { background: transparent; border: 1px solid var(--sale); color: var(--sale); }
   .chip-store[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; }
   .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
   .controls label { display: flex; gap: 8px; align-items: center; font-size: 0.86rem; color: var(--muted); }
@@ -233,6 +240,10 @@
           <div class="chips" id="diet-chips"></div>
         </div>
         <div class="filter-row">
+          <span class="filter-label">Avoid</span>
+          <div class="chips" id="avoid-chips"></div>
+        </div>
+        <div class="filter-row">
           <span class="filter-label">Stores</span>
           <div class="chips" id="store-chips"></div>
         </div>
@@ -244,6 +255,9 @@
               <option value="distance">Distance</option>
             </select>
           </label>
+          <label for="strict" id="strict-wrap" class="check" hidden>
+            <input id="strict" type="checkbox" checked> Also hide “may contain”
+          </label>
           <label for="max-price">Max price $
             <input id="max-price" type="number" min="0" step="0.5" inputmode="decimal" placeholder="Any">
           </label>
@@ -251,7 +265,7 @@
       </div>
       <div id="summary"></div>
       <ul id="results"></ul>
-      <p class="legend">* Worked out from the ingredient list, not a label claim. Check the package if you have an allergy or celiac disease.</p>
+      <p class="legend">* Worked out from the ingredient list, not a label claim. Allergen info comes from product data and can be incomplete or out of date. Always check the package if you have an allergy or celiac disease.</p>
     </section>
 
     <aside aria-label="Shopping list">
