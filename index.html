@@ -17,6 +17,7 @@
     --tag: #ffd53d;
     --tag-ink: #2b2300;
     --sale: #c2410c;
+    --live: #0b7fa8;
     --s-hf: #2f6fb3; --s-bw: #b4530f; --s-vc: #7b3fb0; --s-gl: #2e8a45; --s-pp: #c23a6b;
     --f-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
     --f-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -25,14 +26,14 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #0e1519; --surface: #162127; --ink: #e5ecea; --muted: #93a4ab; --line: #27353c;
-      --accent: #5cc7a6; --accent-soft: #173229; --tag: #f2c94c; --tag-ink: #231b00; --sale: #fb923c;
+      --accent: #5cc7a6; --accent-soft: #173229; --tag: #f2c94c; --tag-ink: #231b00; --sale: #fb923c; --live: #4cc3ea;
       --s-hf: #6aa6e8; --s-bw: #f0954e; --s-vc: #b98ae6; --s-gl: #6cc983; --s-pp: #ee7fa6;
       color-scheme: dark;
     }
   }
   :root[data-theme="dark"] {
     --bg: #0e1519; --surface: #162127; --ink: #e5ecea; --muted: #93a4ab; --line: #27353c;
-    --accent: #5cc7a6; --accent-soft: #173229; --tag: #f2c94c; --tag-ink: #231b00; --sale: #fb923c;
+    --accent: #5cc7a6; --accent-soft: #173229; --tag: #f2c94c; --tag-ink: #231b00; --sale: #fb923c; --live: #4cc3ea;
     --s-hf: #6aa6e8; --s-bw: #f0954e; --s-vc: #b98ae6; --s-gl: #6cc983; --s-pp: #ee7fa6;
     color-scheme: dark;
   }
@@ -124,6 +125,20 @@
   .store-dot[data-s="vc"] { background: var(--s-vc); }
   .store-dot[data-s="gl"] { background: var(--s-gl); }
   .store-dot[data-s="pp"] { background: var(--s-pp); }
+  .store-dot[data-s^="kr-"] { background: var(--live); box-shadow: 0 0 0 2px color-mix(in srgb, var(--live) 30%, transparent); }
+  .badge-live { border: 1px solid var(--live); color: var(--live); }
+  .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--live); margin-right: 6px; vertical-align: 1px; }
+  .chip-live[aria-pressed="true"] .live-dot { background: var(--surface); }
+  #live { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 0.86rem; }
+  #live:empty { display: none; }
+  #live p { margin: 0; }
+  .live-off { color: var(--muted); }
+  .live-off code { font: 500 0.82rem var(--f-mono); background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+  .zip-form { display: flex; gap: 6px; align-items: center; }
+  .zip-form label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .zip-form input { width: 84px; font: 500 0.92rem var(--f-mono); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; min-height: 34px; }
+  .btn-small { min-height: 34px; padding: 0 12px; font-size: 0.86rem; border-radius: 8px; }
+  .notice { margin: 0 0 10px !important; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--sale); color: var(--sale); font-size: 0.86rem; }
   .badges { display: flex; gap: 6px; flex-wrap: wrap; }
   .badges:empty { display: none; }
   .badge { font: 700 0.68rem/1 var(--f-mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 6px; border-radius: 4px; }
@@ -192,7 +207,7 @@
   <div class="wrap">
     <div class="top">
       <h1 class="brand">Shelf<span>Scout</span></h1>
-      <p class="sample-note"><b>Prototype.</b> Stores and prices are sample data.</p>
+      <p class="sample-note" id="sample-note"><b>Prototype.</b> Stores and prices are sample data.</p>
     </div>
     <form id="search-form" role="search">
       <label for="q" hidden>Search for an item</label>
@@ -200,6 +215,7 @@
       <button class="btn" type="submit">Search</button>
     </form>
     <div id="suggestions"></div>
+    <div id="live"></div>
   </div>
 </header>
 

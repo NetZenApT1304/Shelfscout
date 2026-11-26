@@ -20,46 +20,82 @@ jar compare fairly.
 
 ## Run it
 
-No build step. Open `index.html` in a browser, or serve the folder:
+Needs [Node.js](https://nodejs.org) 18 or newer. No packages to install.
 
 ```sh
-python3 -m http.server 8000   # then open http://localhost:8000
+node server.js        # then open http://localhost:8000
 ```
+
+Without Kroger keys the app runs on sample data only. You can also open
+`index.html` directly in a browser for the sample-data version.
+
+## Live Kroger prices
+
+The app can show real prices from Kroger-family stores (Kroger, Ralphs,
+Fred Meyer, King Soopers, Harris Teeter, Smith's, Fry's, QFC and others).
+
+1. Create a free account at <https://developer.kroger.com>.
+2. Register an application and choose the **Products** API (production
+   environment). Copy the **Client ID** and **Client Secret**.
+3. Copy `.env.example` to `.env` and paste them in:
+   ```
+   KROGER_CLIENT_ID=your-client-id
+   KROGER_CLIENT_SECRET=your-client-secret
+   ```
+4. Run `node server.js`, open <http://localhost:8000>, and enter your ZIP code.
+
+The app then searches the 3 nearest Kroger-family stores alongside the sample
+stores. Live results have a **Live price** tag and a blue store dot, and the
+shopping list looks up live prices for everything on it.
+
+How it works:
+
+- `server.js` signs in to Kroger with your keys and calls the Locations and
+  Products APIs. The keys never reach the browser, and `.env` is in `.gitignore`.
+- Results are cached (30 min for products, 1 day for store lookups) to stay well
+  under Kroger's daily request limits.
+- Sizes like "1 gal", "half gallon" or "6 ct / 12 fl oz" are converted to
+  ounces or counts so unit prices compare fairly.
+- Kroger's basic product data has no dietary labels, so gluten-free, organic,
+  vegan, dairy-free and non-GMO are read from the product name. Products that
+  are gluten-free but don't say so in the name (like plain milk) won't show up
+  under the Gluten-free filter yet. Looking products up in Open Food Facts by
+  barcode is the planned fix.
 
 ## Project layout
 
 | File | Purpose |
 |---|---|
 | `index.html` | Page layout and styles |
+| `server.js` | Serves the app and calls the Kroger API (keeps keys private) |
+| `.env.example` | Template for your Kroger keys |
 | `app.js` | Search, filters, sorting, shopping list and basket comparison |
 | `data/products.js` | Sample catalog: 5 stores, 12 item types, ~75 products |
 
-## Connecting real store data
+## Adding more stores
 
-`app.js` gets products through **providers**. Each provider has a
-`search(query)` function that returns offers in this shape:
+`app.js` gets products through **providers** (`sampleProvider`,
+`krogerProvider`). Each has a `search(query)` function that returns offers in
+this shape:
 
 ```js
-{ id, cat, name, brand, store, size, unit /* oz | floz | lb | ct */,
+{ id, cat, name, brand, store, size, unit /* oz | floz | lb | ct | item */,
   price, wasPrice, tags /* ["gf", "organic", "vegan", "df", "ngmo"] */ }
 ```
 
-To add a real store, write a provider that calls **your own backend**, and have
-the backend call the store's API. Store API keys must never be in browser code.
+To add a store, add a route to `server.js` that calls the store's API, and a
+provider in `app.js` that calls that route. Store API keys must never be in
+browser code.
 
-Data sources to look at:
+Other data sources to look at:
 
-- **Kroger Developer API**: product search and prices by store location (free, needs an account).
 - **Walmart affiliate / product APIs**: product and price data (requires approval).
 - **Open Food Facts** (free, open): look up a barcode (UPC) to fill in gluten-free,
-  organic, vegan and allergen labels that store APIs often leave out.
-
-Prices and stock vary by store location, so a real version should ask for the
-shopper's ZIP code and pass it to each provider.
+  organic, vegan and allergen labels.
 
 ## Next steps
 
-1. Small backend (e.g. Node or Python) with a Kroger provider.
-2. ZIP code / location selection.
-3. Enrich products with Open Food Facts dietary data by UPC.
+1. Enrich products with Open Food Facts dietary data by UPC.
+2. Let shoppers pick which nearby stores to include.
+3. Add a second real chain.
 4. Price-drop alerts and saved dietary profiles.
