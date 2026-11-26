@@ -17,6 +17,10 @@ const KROGER_BASE = (process.env.KROGER_API_BASE || "https://api.kroger.com/v1")
 const CLIENT_ID = process.env.KROGER_CLIENT_ID || "";
 const CLIENT_SECRET = process.env.KROGER_CLIENT_SECRET || "";
 const ROOT = __dirname;
+const OFF_BASE = (process.env.OFF_API_BASE || "https://world.openfoodfacts.org").replace(/\/$/, "");
+// Open Food Facts asks apps to identify themselves: "AppName/Version (contact email)".
+const OFF_USER_AGENT = process.env.OFF_USER_AGENT || "ShelfScout/0.1 (prototype)";
+const OFF_CACHE_FILE = path.join(ROOT, ".cache", "openfoodfacts.json");
 
 function loadEnvFile(file) {
   if (!fs.existsSync(file)) return;
@@ -151,6 +155,137 @@ function titleCase(s) {
   return String(s).toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// ---- Open Food Facts: dietary labels by barcode -----------------------------
+
+// Kroger product codes are 13 digits with the barcode's check digit left off
+// (e.g. 0001111041700). Add it back to get the real barcode (0011110417008).
+function krogerToBarcode(code) {
+  const digits = String(code || "").replace(/\D/g, "");
+  if (digits.length < 7 || digits.length > 13) return null;
+  const core = digits.padStart(13, "0").slice(1); // 12 digits
+  let sum = 0;
+  for (let i = 0; i < 12; i++) sum += Number(core[i]) * (i % 2 ? 3 : 1);
+  return core + ((10 - (sum % 10)) % 10);
+}
+
+// Turn an Open Food Facts product into diet tags.
+//   tags:     what the product qualifies for
+//   sources:  "label" (printed claim) or "ingredients" (worked out from the ingredient list)
+//   excludes: tags the data rules out (e.g. it lists milk, so it is not dairy-free)
+function dietFromOff(p) {
+  const labels = p.labels_tags || [];
+  const allergens = p.allergens_tags || [];
+  const traces = p.traces_tags || [];
+  const analysis = p.ingredients_analysis_tags || [];
+  const knowsIngredients = Number(p.ingredients_n) > 0;
+  const has = (list, re) => list.some((t) => re.test(t));
+  const out = { tags: [], sources: {}, excludes: [] };
+  const add = (tag, source) => {
+    out.tags.push(tag);
+    out.sources[tag] = source;
+  };
+
+  const glutenListed = has(allergens, /^en:gluten$/) || has(traces, /^en:gluten$/);
+  if (has(labels, /gluten-free|no-gluten/)) add("gf", "label");
+  else if (glutenListed) out.excludes.push("gf");
+  else if (knowsIngredients) add("gf", "ingredients");
+
+  if (has(labels, /organic/)) add("organic", "label");
+
+  if (has(labels, /^en:vegan$/)) add("vegan", "label");
+  else if (analysis.includes("en:vegan")) add("vegan", "ingredients");
+  else if (analysis.includes("en:non-vegan")) out.excludes.push("vegan");
+
+  const milkListed = has(allergens, /^en:milk$/) || has(traces, /^en:milk$/);
+  if (has(labels, /dairy-free|no-milk|no-dairy|^en:vegan$/)) add("df", "label");
+  else if (milkListed) out.excludes.push("df");
+  else if (knowsIngredients) add("df", "ingredients");
+
+  if (has(labels, /non-gmo|no-gmos/)) add("ngmo", "label");
+  return out;
+}
+
+const offCache = loadOffCache();
+function loadOffCache() {
+  try {
+    return new Map(Object.entries(JSON.parse(fs.readFileSync(OFF_CACHE_FILE, "utf8"))));
+  } catch (e) {
+    return new Map();
+  }
+}
+let offSaveTimer = null;
+function saveOffCache() {
+  clearTimeout(offSaveTimer);
+  offSaveTimer = setTimeout(() => {
+    try {
+      fs.mkdirSync(path.dirname(OFF_CACHE_FILE), { recursive: true });
+      fs.writeFileSync(OFF_CACHE_FILE, JSON.stringify(Object.fromEntries(offCache)));
+    } catch (e) {
+      console.error("Could not save Open Food Facts cache:", e.message);
+    }
+  }, 1000);
+}
+
+// Stay under Open Food Facts' limit of 100 product lookups per minute.
+const offCalls = [];
+async function offRateLimit() {
+  for (;;) {
+    const now = Date.now();
+    while (offCalls.length && now - offCalls[0] > 60_000) offCalls.shift();
+    if (offCalls.length < 90) return offCalls.push(now);
+    await new Promise((r) => setTimeout(r, 60_000 - (now - offCalls[0]) + 50));
+  }
+}
+
+const FOUND_TTL = 7 * 24 * 3600_000;
+const MISSING_TTL = 24 * 3600_000;
+
+async function lookupDiet(barcode) {
+  const hit = offCache.get(barcode);
+  if (hit && Date.now() - hit.at < (hit.found ? FOUND_TTL : MISSING_TTL)) return hit;
+  await offRateLimit();
+  const fields = "code,product_name,labels_tags,allergens_tags,traces_tags,ingredients_analysis_tags,ingredients_n";
+  const res = await fetch(`${OFF_BASE}/api/v2/product/${barcode}.json?fields=${fields}`, {
+    headers: { "User-Agent": OFF_USER_AGENT, Accept: "application/json" },
+  });
+  if (res.status === 404) return remember(barcode, { found: false });
+  if (!res.ok) throw new Error(`Open Food Facts error (${res.status})`);
+  const body = await res.json();
+  if (body.status !== 1 || !body.product) return remember(barcode, { found: false });
+  return remember(barcode, { found: true, code: body.product.code || barcode, ...dietFromOff(body.product) });
+}
+
+function remember(barcode, result) {
+  const entry = { ...result, at: Date.now() };
+  offCache.set(barcode, entry);
+  saveOffCache();
+  return entry;
+}
+
+// Look up many products, 4 at a time. Failures are reported per product.
+async function lookupDietMany(krogerCodes) {
+  const results = {};
+  const queue = [...new Set(krogerCodes)];
+  async function worker() {
+    while (queue.length) {
+      const kc = queue.shift();
+      const barcode = krogerToBarcode(kc);
+      if (!barcode) {
+        results[kc] = { found: false };
+        continue;
+      }
+      try {
+        const { at, ...r } = await lookupDiet(barcode);
+        results[kc] = r;
+      } catch (e) {
+        results[kc] = { found: false, error: true };
+      }
+    }
+  }
+  await Promise.all([1, 2, 3, 4].map(worker));
+  return results;
+}
+
 // ---- HTTP -------------------------------------------------------------------
 
 class HttpError extends Error {
@@ -188,6 +323,12 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/status") {
       return sendJson(res, 200, { kroger: Boolean(CLIENT_ID && CLIENT_SECRET) });
     }
+    if (url.pathname === "/api/diet") {
+      const codes = (url.searchParams.get("codes") || "").split(",").filter((c) => /^\d{7,14}$/.test(c));
+      if (!codes.length) throw new HttpError(400, "No product codes given.");
+      if (codes.length > 40) throw new HttpError(400, "Ask for 40 products or fewer at a time.");
+      return sendJson(res, 200, { results: await lookupDietMany(codes) });
+    }
     if (url.pathname.startsWith("/api/kroger/")) {
       if (!CLIENT_ID || !CLIENT_SECRET) throw new HttpError(503, "Kroger keys are not set. Add them to .env and restart the server.");
       if (url.pathname === "/api/kroger/locations") {
@@ -219,4 +360,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseSize, inferTags, server };
+module.exports = { parseSize, inferTags, krogerToBarcode, dietFromOff, server };

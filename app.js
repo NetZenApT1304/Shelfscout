@@ -41,7 +41,7 @@
 
   // Live prices from Kroger-family stores, through server.js.
   // Only works when the app is served by server.js with Kroger keys set.
-  const live = { available: false, zip: "", locations: [], error: "" };
+  const live = { available: false, zip: "", locations: [], error: "", dietPending: 0 };
 
   const krogerProvider = {
     name: "Kroger",
@@ -59,9 +59,50 @@
           return body.offers.map((o) => ({ ...o, store: "kr-" + loc.locationId, cat, live: true }));
         })
       );
-      return perStore.flat();
+      const offers = perStore.flat();
+      offers.forEach((o) => (o.sources = Object.fromEntries(o.tags.map((t) => [t, "name"]))));
+      enrichDiet(offers);
+      return offers;
     },
   };
+
+  // Fill in diet tags from Open Food Facts by barcode, through server.js.
+  // Runs in the background; results re-render when they arrive.
+  const dietCache = new Map(); // Kroger product code -> result (or a pending promise)
+
+  async function enrichDiet(offers) {
+    const codes = [...new Set(offers.map((o) => o.upc).filter((c) => c && !dietCache.has(c)))];
+    const batches = [];
+    for (let i = 0; i < codes.length; i += 40) batches.push(codes.slice(i, i + 40));
+    batches.forEach((batch) => {
+      const p = fetch("/api/diet?codes=" + batch.join(","))
+        .then((r) => (r.ok ? r.json() : { results: {} }))
+        .then((body) => batch.forEach((c) => dietCache.set(c, body.results[c] || { found: false })))
+        .catch(() => batch.forEach((c) => dietCache.delete(c)));
+      batch.forEach((c) => dietCache.set(c, p));
+    });
+    const pending = [...new Set(offers.map((o) => dietCache.get(o.upc)).filter((v) => v instanceof Promise))];
+    if (!pending.length) return offers.forEach(applyDiet);
+    live.dietPending++;
+    renderResults();
+    await Promise.allSettled(pending);
+    live.dietPending--;
+    offers.forEach(applyDiet);
+    renderResults();
+    renderList();
+  }
+
+  function applyDiet(o) {
+    const d = dietCache.get(o.upc);
+    if (!d || d instanceof Promise || !d.found || o.offCode) return;
+    o.offCode = d.code;
+    const tags = new Set(o.tags.filter((t) => !d.excludes.includes(t)));
+    d.tags.forEach((t) => tags.add(t));
+    const sources = {};
+    tags.forEach((t) => (sources[t] = d.sources[t] || o.sources[t] || "name"));
+    o.tags = [...tags];
+    o.sources = sources;
+  }
 
   const providers = [sampleProvider, krogerProvider];
 
@@ -228,7 +269,9 @@
       return;
     }
 
-    const notice = live.error ? `<p class="notice">Live prices: ${esc(live.error)}</p>` : "";
+    const notice =
+      (live.error ? `<p class="notice">Live prices: ${esc(live.error)}</p>` : "") +
+      (live.dietPending ? `<p class="checking">Checking dietary labels on Open Food Facts…</p>` : "");
 
     if (!state.results.length) {
       summary.innerHTML = notice;
@@ -288,7 +331,16 @@
         )} <span class="muted">${esc(storeById[o.store].note)}</span></p>
             ${
               o.tags.length
-                ? `<ul class="tags">${o.tags.map((t) => `<li>${TAGS[t]}</li>`).join("")}</ul>`
+                ? `<ul class="tags">${o.tags.map((t) => tagPill(o, t)).join("")}</ul>`
+                : ""
+            }
+            ${
+              o.offCode
+                ? `<p class="source">Diet info: <a href="https://world.openfoodfacts.org/product/${esc(
+                    o.offCode
+                  )}" target="_blank" rel="noopener">Open Food Facts</a></p>`
+                : o.live
+                ? `<p class="source">Diet info from the product name only</p>`
                 : ""
             }
           </div>
@@ -303,6 +355,16 @@
         </li>`;
       })
       .join("");
+  }
+
+  const SOURCE_NOTE = {
+    label: "On the product label",
+    ingredients: "Based on the ingredient list, not a label claim",
+    name: "From the product name",
+  };
+  function tagPill(o, t) {
+    const src = (o.sources && o.sources[t]) || "label";
+    return `<li class="src-${src}" title="${SOURCE_NOTE[src]}">${TAGS[t]}${src === "ingredients" ? "*" : ""}</li>`;
   }
 
   // The list item remembers the dietary needs that are active when you add it,

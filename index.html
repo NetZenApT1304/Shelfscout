@@ -147,6 +147,11 @@
   .badge-sale { border: 1px solid var(--sale); color: var(--sale); }
   .tags { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
   .tags li { font-size: 0.74rem; padding: 2px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+  .tags li.src-ingredients { background: transparent; border: 1px dashed var(--accent); padding: 1px 6px; }
+  .source { margin: 4px 0 0; font-size: 0.74rem; color: var(--muted); }
+  .source a { color: var(--accent); }
+  .checking { margin: 0 0 10px !important; font-size: 0.86rem; color: var(--live); }
+  .legend { margin: 14px 0 0; font-size: 0.78rem; color: var(--muted); }
 
   /* Shelf-label price tag */
   .price-tag {
@@ -246,6 +251,7 @@
       </div>
       <div id="summary"></div>
       <ul id="results"></ul>
+      <p class="legend">* Worked out from the ingredient list, not a label claim. Check the package if you have an allergy or celiac disease.</p>
     </section>
 
     <aside aria-label="Shopping list">

@@ -56,11 +56,38 @@ How it works:
   under Kroger's daily request limits.
 - Sizes like "1 gal", "half gallon" or "6 ct / 12 fl oz" are converted to
   ounces or counts so unit prices compare fairly.
-- Kroger's basic product data has no dietary labels, so gluten-free, organic,
-  vegan, dairy-free and non-GMO are read from the product name. Products that
-  are gluten-free but don't say so in the name (like plain milk) won't show up
-  under the Gluten-free filter yet. Looking products up in Open Food Facts by
-  barcode is the planned fix.
+- Dietary tags for Kroger products come from **Open Food Facts** (see below),
+  with the product name as a fallback.
+
+## Dietary labels (Open Food Facts)
+
+Kroger's product data has no dietary labels, so `server.js` looks each product
+up by barcode in [Open Food Facts](https://world.openfoodfacts.org), a free,
+open food database. No account or key is needed.
+
+| Tag | Counts when |
+|---|---|
+| Gluten-free | Labeled gluten-free, **or** the ingredient list has no gluten (shown with *) |
+| Organic | Labeled organic (USDA, EU, etc.) |
+| Vegan | Labeled vegan, **or** every ingredient is vegan (shown with *) |
+| Dairy-free | Labeled dairy-free or vegan, **or** no milk in the ingredients (shown with *) |
+| Non-GMO | Labeled Non-GMO |
+
+- If the data lists gluten or milk as an allergen or "may contain", the product
+  is left out of Gluten-free or Dairy-free, even if its name suggests otherwise.
+- Tags marked with * are worked out from ingredients, not a label claim, so
+  shoppers with allergies or celiac disease should still check the package.
+- Products not in Open Food Facts fall back to the product name and say so.
+- Lookups are cached in `.cache/openfoodfacts.json` (7 days, or 1 day for
+  products not found) and kept under Open Food Facts' 100-per-minute limit.
+- Open Food Facts asks apps to identify themselves. Set `OFF_USER_AGENT` in
+  `.env` to your app name and a contact email.
+- The data is under the Open Database License. Each product links to its
+  Open Food Facts page as attribution.
+
+How a Kroger code becomes a barcode: Kroger's 13-digit product codes leave off
+the barcode's final check digit (`0001111041700`). `server.js` adds it back
+(`0011110417008`) before the lookup.
 
 ## Project layout
 
@@ -90,12 +117,10 @@ browser code.
 Other data sources to look at:
 
 - **Walmart affiliate / product APIs**: product and price data (requires approval).
-- **Open Food Facts** (free, open): look up a barcode (UPC) to fill in gluten-free,
-  organic, vegan and allergen labels.
 
 ## Next steps
 
-1. Enrich products with Open Food Facts dietary data by UPC.
-2. Let shoppers pick which nearby stores to include.
-3. Add a second real chain.
+1. Let shoppers pick which nearby stores to include.
+2. Add a second real chain.
+3. Allergen filters (peanuts, soy, eggs) using the same Open Food Facts data.
 4. Price-drop alerts and saved dietary profiles.
