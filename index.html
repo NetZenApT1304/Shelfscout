@@ -210,6 +210,34 @@
   .basket li.is-partial .total { color: var(--muted); }
   .split { font-size: 0.86rem; margin: 0 0 10px; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 6px 6px 0; }
 
+  /* Shopper profiles */
+  .profiles { display: grid; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+  .profile-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chip-profile { font-weight: 600; }
+  .chip-profile[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+  .chip-add { border-style: dashed; color: var(--accent); }
+  .profile-status { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between;
+    font-size: 0.86rem; color: var(--muted); padding-left: 80px; }
+  @media (max-width: 520px) { .profile-status { padding-left: 0; } }
+  .profile-status strong { color: var(--ink); }
+  .profile-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .profile-empty { margin: 0; font-size: 0.88rem; color: var(--muted); }
+  .profile-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .profile-form label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); width: 100%; }
+  .profile-form input { flex: 1 1 200px; min-width: 0; max-width: 320px; font: 500 0.95rem var(--f-body); color: var(--ink);
+    background: var(--bg); border: 1.5px solid var(--line); border-radius: 8px; padding: 7px 10px; min-height: 36px; }
+  .profile-form input:focus { border-color: var(--accent); outline: none; }
+  .profile-hint { width: 100%; margin: 0; font-size: 0.8rem; color: var(--muted); }
+  .profile-error { color: var(--sale); }
+  .profile-confirm p { margin: 0 0 8px; font-size: 0.9rem; }
+  .btn-ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  .btn-danger { background: var(--sale); }
+  .link-danger { color: var(--sale); }
+  .toast { position: fixed; left: 50%; transform: translateX(-50%); z-index: 20;
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 10px; font-size: 0.9rem;
+    box-shadow: 0 6px 20px rgb(0 0 0 / 0.18); max-width: calc(100% - 32px); }
+
   @media (prefers-reduced-motion: no-preference) {
     .chip, .add-btn { transition: background-color 0.15s, border-color 0.15s; }
   }
@@ -235,6 +263,7 @@
   <div class="wrap">
     <section aria-label="Results">
       <div class="filters">
+        <div id="profiles" class="profiles"></div>
         <div class="filter-row">
           <span class="filter-label">Needs</span>
           <div class="chips" id="diet-chips"></div>
@@ -277,6 +306,8 @@
     </aside>
   </div>
 </main>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="data/products.js"></script>
 <script src="app.js"></script>

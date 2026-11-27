@@ -14,12 +14,23 @@ jar compare fairly.
 - **Allergen filter ("Avoid")** for the 9 major US allergens: peanuts, tree nuts,
   milk, eggs, soy, wheat/gluten, fish, shellfish and sesame. Optionally also hides
   products that "may contain" them. Each product lists its allergens.
+- **Shopper profiles.** Save a set of needs and allergens under a name ("Me",
+  "Sam: no peanuts") and switch between them with one tap. Change filters
+  while a profile is selected and the app offers to save the change or undo it.
+  The last profile used is picked again on the next visit.
 - **Store filter** with distance, plus a max-price limit.
 - **Unit-price sorting** with a *Best value* tag, plus *Lowest price* and *Sale* tags.
 - **Shopping list with basket comparison.** Shows what your whole list costs at
   each store, which stores are missing items, and how much you'd save by
   splitting the trip across stores. Dietary needs active when you add an item
   are remembered (add pasta with Gluten-free on, and only GF pasta counts).
+
+## Where profiles are saved
+
+Profiles and the shopping list are saved in the shopper's own browser
+(localStorage). They don't sync between devices and are lost if the browser's
+site data is cleared. Syncing needs user accounts and a database, which is a
+later step.
 
 ## Run it
 
@@ -140,5 +151,5 @@ Other data sources to look at:
 
 1. Let shoppers pick which nearby stores to include.
 2. Add a second real chain.
-3. Saved shopper profiles (needs and allergens remembered between visits).
+3. User accounts so profiles and lists sync across devices.
 4. Price-drop alerts.

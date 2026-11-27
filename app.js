@@ -300,6 +300,7 @@
       )
       .join("");
     renderLiveStatus();
+    renderProfiles();
     $("#suggestions").innerHTML =
       '<span class="try">Try</span>' +
       SUGGESTIONS.map((s) => `<button type="button" class="link-btn" data-suggest="${s}">${s}</button>`).join("");
@@ -584,6 +585,7 @@
     $("#strict").addEventListener("change", (e) => {
       state.strictTraces = e.target.checked;
       renderResults();
+      renderProfiles();
     });
 
     $("#max-price").addEventListener("input", (e) => {
@@ -594,7 +596,9 @@
     document.addEventListener("click", (e) => {
       const b = e.target.closest("button");
       if (!b) return;
-      if (b.dataset.diet) {
+      if (b.dataset.profile || b.dataset.profileAction) {
+        handleProfileClick(b);
+      } else if (b.dataset.diet) {
         const k = b.dataset.diet;
         state.diet.has(k) ? state.diet.delete(k) : state.diet.add(k);
         renderControls();
@@ -717,6 +721,269 @@
     }
     if (live.available && saved) setZip(saved);
   }
+
+  // ---- Shopper profiles -----------------------------------------------------
+  // Saved sets of needs and allergens ("Me", "Sam: no peanuts"), kept in this
+  // browser. Picking a profile applies its filters.
+  const PROFILE_KEY = "shelf-scout-profiles-v1";
+  const MAX_NAME = 30;
+  const profiles = loadProfiles();
+  // mode: null (showing chips) | "new" | "edit"; confirmDelete: waiting for a yes
+  const profileUI = { mode: null, confirmDelete: false, error: "" };
+
+  function loadProfiles() {
+    try {
+      const p = JSON.parse(localStorage.getItem(PROFILE_KEY) || "null");
+      if (p && Array.isArray(p.list)) {
+        p.list = p.list.filter((x) => x && x.id && x.name).map(cleanProfile);
+        if (!p.list.some((x) => x.id === p.activeId)) p.activeId = null;
+        return p;
+      }
+    } catch (e) {
+      /* storage unavailable or damaged */
+    }
+    return { list: [], activeId: null };
+  }
+
+  // Keep only known filter values, in case saved data is old or edited by hand.
+  function cleanProfile(p) {
+    return {
+      id: String(p.id),
+      name: String(p.name).slice(0, MAX_NAME),
+      diet: (p.diet || []).filter((t) => TAGS[t]),
+      avoid: (p.avoid || []).filter((a) => ALLERGENS[a]),
+      strict: p.strict !== false,
+    };
+  }
+
+  function saveProfiles() {
+    try {
+      localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles));
+    } catch (e) {
+      /* storage unavailable: profiles last until the page closes */
+    }
+  }
+
+  function activeProfile() {
+    return profiles.list.find((p) => p.id === profiles.activeId) || null;
+  }
+
+  function currentFilters() {
+    return { diet: [...state.diet], avoid: [...state.avoid], strict: state.strictTraces };
+  }
+
+  function sameFilters(p) {
+    const c = currentFilters();
+    const key = (x) => JSON.stringify([x.diet.slice().sort(), x.avoid.slice().sort(), x.avoid.length ? x.strict : true]);
+    return key(c) === key(p);
+  }
+
+  function applyProfile(p) {
+    state.diet = new Set(p.diet);
+    state.avoid = new Set(p.avoid);
+    state.strictTraces = p.strict;
+  }
+
+  function describe(p) {
+    const parts = [
+      ...p.diet.map((t) => TAGS[t]),
+      ...p.avoid.map((a) => "No " + ALLERGENS[a].toLowerCase()),
+    ];
+    if (p.avoid.length && p.strict) parts.push("hides “may contain”");
+    return parts.length ? parts.join(" · ") : "No needs or allergens";
+  }
+
+  function renderProfiles() {
+    const el = $("#profiles");
+    if (!el) return;
+    const active = activeProfile();
+
+    if (profileUI.mode) {
+      const editing = profileUI.mode === "edit" && active;
+      if (editing && profileUI.confirmDelete) {
+        el.innerHTML = `<div class="profile-confirm" role="alertdialog" aria-label="Delete profile">
+            <p>Delete the profile <strong>${esc(active.name)}</strong>? Your current filters stay as they are.</p>
+            <div class="profile-actions">
+              <button type="button" class="btn btn-small btn-danger" data-profile-action="confirm-delete">Delete profile</button>
+              <button type="button" class="btn btn-small btn-ghost" data-profile-action="keep">Keep it</button>
+            </div>
+          </div>`;
+        return;
+      }
+      el.innerHTML = `<form id="profile-form" class="profile-form" novalidate>
+          <label for="profile-name">${editing ? "Profile name" : "Name this profile"}</label>
+          <input id="profile-name" maxlength="${MAX_NAME}" autocomplete="off" placeholder="e.g. Me, Sam, Grandma" value="${
+            editing ? esc(active.name) : ""
+          }">
+          <button type="submit" class="btn btn-small">${editing ? "Save" : "Save profile"}</button>
+          <button type="button" class="btn btn-small btn-ghost" data-profile-action="cancel">Cancel</button>
+          ${
+            editing
+              ? `<button type="button" class="link-btn link-danger" data-profile-action="delete">Delete profile</button>`
+              : ""
+          }
+          <p class="profile-hint">${
+            profileUI.error
+              ? `<span class="profile-error">${esc(profileUI.error)}</span>`
+              : editing
+              ? "Saves the name and the needs and allergens selected below."
+              : "Saves the needs and allergens selected below: " + esc(describe(currentFilters()))
+          }</p>
+        </form>`;
+      const input = $("#profile-name");
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      $("#profile-form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        submitProfileForm(input.value);
+      });
+      return;
+    }
+
+    if (!profiles.list.length) {
+      el.innerHTML = `<p class="profile-empty">Save your needs and allergens as a profile, and they're set every time you shop.
+          <button type="button" class="link-btn" data-profile-action="new">Create a profile</button></p>`;
+      return;
+    }
+
+    const dirty = active && !sameFilters(active);
+    el.innerHTML = `<div class="profile-row">
+        <span class="filter-label">Shopper</span>
+        <div class="chips">
+          ${profiles.list
+            .map(
+              (p) =>
+                `<button type="button" class="chip chip-profile" data-profile="${esc(p.id)}" aria-pressed="${
+                  p.id === profiles.activeId
+                }" title="${esc(describe(p))}">${esc(p.name)}</button>`
+            )
+            .join("")}
+          <button type="button" class="chip chip-add" data-profile-action="new">+ New</button>
+        </div>
+      </div>
+      ${
+        active
+          ? `<div class="profile-status">
+              <span>${
+                dirty
+                  ? `Filters changed from <strong>${esc(active.name)}</strong>`
+                  : `<strong>${esc(active.name)}</strong>: ${esc(describe(active))}`
+              }</span>
+              <span class="profile-actions">
+                ${
+                  dirty
+                    ? `<button type="button" class="btn btn-small" data-profile-action="update">Save to ${esc(
+                        active.name
+                      )}</button>
+                       <button type="button" class="btn btn-small btn-ghost" data-profile-action="revert">Undo changes</button>`
+                    : ""
+                }
+                <button type="button" class="link-btn" data-profile-action="edit">Edit</button>
+              </span>
+            </div>`
+          : ""
+      }`;
+  }
+
+  function submitProfileForm(rawName) {
+    const name = rawName.trim().replace(/\s+/g, " ").slice(0, MAX_NAME);
+    const active = activeProfile();
+    const editing = profileUI.mode === "edit" && active;
+    if (!name) {
+      profileUI.error = "Enter a name for this profile.";
+      return renderProfiles();
+    }
+    const clash = profiles.list.find(
+      (p) => p.name.toLowerCase() === name.toLowerCase() && !(editing && p === active)
+    );
+    if (clash) {
+      profileUI.error = `There's already a profile called ${clash.name}. Pick another name.`;
+      return renderProfiles();
+    }
+    if (editing) {
+      Object.assign(active, { name }, currentFilters());
+    } else {
+      const p = cleanProfile({ id: "p" + Date.now().toString(36), name, ...currentFilters() });
+      profiles.list.push(p);
+      profiles.activeId = p.id;
+    }
+    saveProfiles();
+    closeProfileForm();
+    flash(editing ? "Profile saved" : `Profile “${name}” created`);
+  }
+
+  function closeProfileForm() {
+    profileUI.mode = null;
+    profileUI.confirmDelete = false;
+    profileUI.error = "";
+    renderProfiles();
+  }
+
+  function handleProfileClick(b) {
+    if (b.dataset.profile) {
+      const id = b.dataset.profile;
+      if (profiles.activeId === id) {
+        profiles.activeId = null; // tap again to stop using it; filters stay
+      } else {
+        profiles.activeId = id;
+        applyProfile(activeProfile());
+      }
+      saveProfiles();
+      renderControls();
+      renderResults();
+      return;
+    }
+    const active = activeProfile();
+    switch (b.dataset.profileAction) {
+      case "new":
+        profileUI.mode = "new";
+        profileUI.error = "";
+        return renderProfiles();
+      case "edit":
+        profileUI.mode = "edit";
+        profileUI.error = "";
+        return renderProfiles();
+      case "cancel":
+        return closeProfileForm();
+      case "delete":
+        profileUI.confirmDelete = true;
+        return renderProfiles();
+      case "keep":
+        profileUI.confirmDelete = false;
+        return renderProfiles();
+      case "confirm-delete":
+        if (active) {
+          profiles.list = profiles.list.filter((p) => p !== active);
+          profiles.activeId = null;
+          saveProfiles();
+          flash(`Profile “${active.name}” deleted`);
+        }
+        return closeProfileForm();
+      case "update":
+        if (active) {
+          Object.assign(active, currentFilters());
+          saveProfiles();
+          flash(`Saved to ${active.name}`);
+        }
+        return renderProfiles();
+      case "revert":
+        if (active) applyProfile(active);
+        renderControls();
+        return renderResults();
+    }
+  }
+
+  let flashTimer;
+  function flash(text) {
+    const el = $("#toast");
+    el.textContent = text;
+    el.hidden = false;
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => (el.hidden = true), 2400);
+  }
+
+  // Start with the last profile that was in use.
+  if (activeProfile()) applyProfile(activeProfile());
 
   renderControls();
   bind();
